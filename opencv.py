@@ -1,149 +1,175 @@
+import pygame as pg
+from pygame.math import Vector2
+import random
 import time
-import cv2
-import numpy as np
-
-# step 2 load yolo
-# We load the algorythm. The run the algorythm we need three files:
-# Weight file: it’s the trained model, the core of the algorythm to detect the objects.
-# Cfg file: it’s the configuration file, where there are all the settings of the algorythm.
-# Name files: contains the name of the objects that the algorythm can detect.
-net = cv2.dnn.readNet("yolov4-tiny.weights", "yolov4-tiny.cfg")
-classes = []
-with open("coco.names", "r") as f:
-    classes = [line.strip() for line in f.readlines()]
-
-# defining the start time
-starting_time = time.time()
-# initialize the frame_id as 0
-frame_id = 0
-#test list file 
-density =[8,2,7,4]
-textfile= open("density.txt","w")
-for element in density:
-    textfile.write(str(element))
-textfile.close()
-list_of_vehicles = ["car", "bus", "motorbike", "truck", "bicycle"]
-# defining the layernames
-layer_names = net.getLayerNames()
-output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-
-#randomizes between the range of colors
-colors = np.random.uniform(20, 255, size=(len(classes), 3))
-
-# Loading image
-cap0 = cv2.VideoCapture("sample_videos/lane.mkv")
-cap3 = cv2.VideoCapture(0)
-cap1 = cv2.VideoCapture("sample_videos/bridge.mp4")
-cap4 = cv2.VideoCapture("sample_videos/test.mp4")
-# Object detection from Stable camera
-vehicle_lane0_count = 0
 
 
-def cameraFeed(frame_id, vehicle_lane0_count, camera):
-        ret, img = camera.read()
-        frame_id += 1
-        vw = img.shape[1]
-        vh = img.shape[0]
-        print(img.shape)
 
-        img = cv2.resize(img, None, fx=0.7, fy=0.7)
-        # cam3 = cv2.resize(cam3, None, fx=0.4, fy=0.4)
-        # get the height and width of each frame in the video
-        height, width, channels = img.shape
-        # 1. Object Detection
-        # Showing informations on the screen
-        # Detecting objects
-        # the blob is used to extract feature from the image and resize them as Yolo accept only three sizes
-        # 320X320 for less accuracy
-        # 609x609 for high accuracy
-        # 416x416 for mid accuracy
-        blob = cv2.dnn.blobFromImage(img, 1 / 255, (416, 416), (0, 0, 0), True, crop=False)
-        # blob = cv2.dnn.blobFromImage(roi, 1 / 255, (416, 416), (0, 0, 0), True, crop=False)
-        net.setInput(blob)
-        # the  variable outs is the result of the detection
-        outs = net.forward(output_layers)
-        class_ids = []
-        confidences = []
-        boxes = []
-        # We then loop trough the outs array
-        # we calculate the confidence and we choose a confidence threshold.
-        for out in outs:
-            for detection in out:
-                # defined array for scores
-                scores = detection[5:]
-                # function np.argmax returns indices of the max element of the scores
-                class_id = np.argmax(scores)
-                confidence = scores[class_id]
-                # we set a threshold confidence of 0.5,
-                # if it’s greater we consider the object correctly detected, otherwise we skip it.
-                # The threshold goes from 0 to 1. The closer to 1 the greater is the accuracy of the detection,
-                # while the closer to 0 the less is the accuracy but also it’s greater the number of the objects detected.
-                if confidence > 0.55:
-                    # Object detected
-                    center_x = int(detection[0] * width)
-                    center_y = int(detection[1] * height)
-                    w = int(detection[2] * width)
-                    h = int(detection[3] * height)
-                    # Rectangle coordinates
-                    x = int(center_x - w / 2)
-                    y = int(center_y - h / 2)
-                    boxes.append([x, y, w, h])
-                    confidences.append(float(confidence))
-                    class_ids.append(class_id)
-                    for (x, y, w, h) in boxes:
-                        automotiveCY = int(y + h / 2)
-                        linCy = height - 200
-                        if linCy + 2 > automotiveCY > linCy - 2:
-                            vehicle_lane0_count = vehicle_lane0_count + 1
-                            cv2.line(img, (100, height - 100), (width - 0, height - 100), (0, 0, 255), 5)
+class Entity(pg.sprite.Sprite):
 
-        # When we perform the detection, it happens that we have more boxes for the same object,
-        # so we should use another function to remove this “noise”.
-        # It’s called Non maximum suppresion.
-        indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
-        # define the font to be used
-        font = cv2.FONT_ITALIC
-        dets = []
-        for i in range(len(boxes)):
-            if i in indexes:
-                (x, y) = (boxes[i][0], boxes[i][1])
-                (w, h) = (boxes[i][2], boxes[i][3])
-                dets.append([x, y, x + w, y + h, confidences[i]])
-                # label- Box: contain the coordinates of the rectangle sorrounding the object detected.
-                # Label: it’s the name of the object detected
-                # Confidence: the confidence about the detection from 0 to 1.
-                label = classes[class_ids[i]]
-                print(label)
-                color =colors[i]
-
-                fontSize = 0.6
-                fontthickness = 2
-                eleapsed_time = time.time() - starting_time
-                fps = frame_id / eleapsed_time
-                # drawing the features into the image detected
-                # Display the ID at the center of the box
-                cv2.putText(img, "VEHICLE COUNT : " + str(vehicle_lane0_count), (450, 70), font, fontSize, (0, 0, 255),
-                            fontthickness)
-                cv2.putText(img, "FPS : " + str(fps), (450, 30), font, fontSize, (0, 0, 255),
-                            fontthickness)
-                cv2.putText(img, str(label), (x, y + 40), font, fontSize, color, fontthickness)
-
-                cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
-                cv2.putText(img, str(round(confidences[0], 2) * 100) + "%", (x, y - 20), font, fontSize, color, fontthickness)
-                # camera 2
-        # show each frame as it occurs
-
-        cv2.imshow("Image", img)
-
-        # cv2.imshow("image",frame)
-        print(vehicle_lane0_count)
+    def __init__(self, pos, waypoints):
+        super().__init__()
+        self.image = pg.Surface((30, 45))
+        self.image.fill(pg.Color(random.choices(range(250,256), k=3)))
+        self.rect = self.image.get_rect(center=pos)
+        self.vel = Vector2(0, 0)
+        self.max_speed = 3
+        self.pos = Vector2(pos)
+        self.waypoints = waypoints
+        self.waypoint_index = 0
+        self.target = self.waypoints[self.waypoint_index]
+        self.target_radius = 100
 
 
-while 1:
-    cameraFeed(frame_id,vehicle_lane0_count,cap0)
+    def update(self):
+        # A vector pointing from self to the target.
+        heading = self.target - self.pos
+        distance = heading.length()  # Distance to the target.
+        heading.normalize_ip()
+        if distance <= 4:  # We're closer than 2 pixels.
+            # Increment the waypoint index to swtich the target.
+            # The modulo sets the index back to 0 if it's equal to the length.
+            self.waypoint_index = (self.waypoint_index + 1) % len(self.waypoints)
+            self.target = self.waypoints[self.waypoint_index]
+        if distance <= self.target_radius:
+            # If we're approaching the target, we slow down.
+            self.vel = heading * (distance / self.target_radius * self.max_speed)
+        else:  # Otherwise move with max_speed.
+            self.vel = heading * self.max_speed
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        self.pos += self.vel
+        self.rect.center = self.pos
 
 
-cv2.destroyAllWindows()
+def main():
+    pg.display.set_caption("WarehouseManagementRobots")
+
+    # junction coordinates
+    junction1 = (246, 156)
+    junction2 = (761, 156)
+    junction3 = (246, 490)
+    junction4 = (761, 490)
+    junction5 = (246, 819)
+    junction6 = (761, 819)
+
+    # robot home positions
+    robot1loc = (39, 150)
+    robot2loc = (968, 150)
+    robot3loc = (968, 490)
+    robot4loc = (39, 819)
+    # stations
+    station1 = (39, 150)
+    station2 = (968, 150)
+    station3 = (39, 490)
+    station4 = (968, 490)
+    station5 = (39, 819)
+    station6 = (968, 819)
+
+    screen = pg.display.set_mode((1020, 1008))
+    clock = pg.time.Clock()
+
+    forward11 = [junction1, junction2, junction4,junction6, station6]
+    forward12 = [junction1, junction3, junction4, junction6, station6]
+    forward13 = [junction1, junction5, junction6, station6]
+    back11 = [junction6, junction4,junction2,junction1, robot1loc]
+    back12 = [junction6, junction4, junction3, junction1, robot1loc]
+    back13 = [junction5, junction3,junction1, robot1loc]
+    forward = [forward11, forward12, forward13]
+    back = [back11, back12, back13]
+    i = random.choice(forward)
+    j = random.choice(back)
+    testway1 = [junction1, junction2, junction4, junction6, station6,junction6,junction5,junction3,junction1,robot1loc]
+    print(i.__add__(j))
+    robotway1 = i.__add__(j)
+
+    forward31 = [junction4, junction2, junction1, junction3, junction5, station5]
+    forward32 = [junction4, junction6, junction5, station5]
+    forward33 = [junction4, junction3, junction5, station5]
+    back31 = [junction5, junction3, junction4, robot3loc]
+    back32 = [junction5, junction6, junction4, robot3loc]
+    back33 = [junction5, junction3, junction1, junction2, junction4, robot3loc]
+    forward3 = [forward31, forward32, forward33]
+    back3 = [back31, back32, back33]
+    k = random.choice(forward3)
+    l = random.choice(back3)
+    testway3 = [junction4,junction3,station3,station5,junction5,junction3,junction1,junction2,junction4,robot3loc]
+    robotways3 = k.__add__(l)
+
+    forward21 = [junction2, junction1, junction3, station3]
+    forward22 = [junction2, junction4, junction3, station3]
+    forward23 = [junction2, junction4, junction6, junction5, junction3, station3]
+    back21 = [junction3, junction4, junction2, robot2loc]
+    back22 = [junction3, junction5, junction6, junction4, junction2, robot2loc]
+    back23 = [junction3, junction1, junction2, robot2loc]
+    forward4 = [forward21, forward22, forward23]
+    back4 = [back21, back22, back23]
+    m = random.choice(forward4)
+    n = random.choice(back4)
+    testway2 = [junction2,junction4,junction6,junction5,junction3,station3,junction3,junction1,junction2,robot2loc]
+    robotways2 = m.__add__(n)
+
+    forward41 = [junction5, junction6, junction4, station4]
+    forward42 = [junction5, junction3, junction1, junction2, junction4, station4]
+    forward43 = [junction5, junction3, junction4, station4]
+    back41 = [junction4, junction3, junction5, robot4loc]
+    back42 = [junction4, junction2, junction1, junction3, junction5, robot4loc]
+    back43 = [junction4, junction6, junction5, robot4loc]
+    back5 = random.choice([back41, back42, back43])
+    forward5 = random.choice([forward41, forward42, forward43])
+    testway4 = [station3,station1,junction1,junction2,station2,station4,station6,junction6,junction5,robot4loc]
+    robotways4 = forward5.__add__(back5)
+
+    sprite1 = pg.sprite.Group(Entity((39, 150), testway1))
+    sprite2 = pg.sprite.Group(Entity((968, 150), testway2))
+    sprite3 = pg.sprite.Group(Entity((968, 490), testway3))
+    sprite4 = pg.sprite.Group(Entity((39, 819), testway4))
+
+    done = False
+
+    while not done:
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                done = True
+
+        sprite1.update()
+        sprite2.update()
+        sprite3.update()
+        sprite4.update()
+
+        screen.fill((40, 40, 40))
+        sprite2.draw(screen)
+        sprite1.draw(screen)
+        sprite3.draw(screen)
+        sprite4.draw(screen)
+        for point in robotway1:
+            pg.draw.rect(screen, (90, 200, 40), (point, (4, 4)))
+
+        # defining the robot grid
+        pg.draw.line(screen, (255, 255, 255), (0, 156), (1020, 156), 4)
+        pg.draw.line(screen, (255, 255, 255), (0, 490), (1020, 490), 4)
+        pg.draw.line(screen, (255, 255, 255), (0, 819), (1020, 819), 4)
+        pg.draw.line(screen, (255, 255, 255), (246, 0), (246, 1008), 4)
+        pg.draw.line(screen, (255, 255, 255), (761, 0), (761, 1008), 4)
+        pg.draw.line(screen, (255, 255, 255), (39, 0), (39,1008), 4)
+        pg.draw.line(screen, (255, 255, 255), (968, 0), (968, 1008), 4)
+
+        #station markers
+        green =(0, 255, 0)
+        home_position = (0,0,255)
+        pg.draw.circle(screen, home_position, station1, 20)
+        pg.draw.circle(screen, home_position, station2, 20)
+        pg.draw.circle(screen, green, station3, 20)
+        pg.draw.circle(screen, home_position, station4, 20)
+        pg.draw.circle(screen, home_position, station5, 20)
+        pg.draw.circle(screen, green, station6, 20)
+
+
+
+        pg.display.flip()
+        clock.tick(60)
+
+
+if __name__ == '__main__':
+    pg.init()
+    main()
+    pg.quit()
